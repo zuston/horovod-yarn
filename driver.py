@@ -2,6 +2,9 @@ import os
 import logging
 import time
 
+from optparse import OptionParser
+import sys
+
 try:
     import horovod.tensorflow as hvd
     from horovod.runner import gloo_run
@@ -19,7 +22,7 @@ def _driver_fn():
     print("redezevous server started. port: " + str(global_rendezv_port))
 
     # 准备好相关 host 的地址，然后构建
-    worker_list = "localhost:1"
+    # worker_list = "localhost:1"
     hosts = parse_hosts(worker_list)
     host_alloc_plan = get_host_assignments(hosts, 1)
     print(host_alloc_plan)
@@ -30,5 +33,15 @@ def _driver_fn():
 def main():
     _driver_fn()
 
-if __name__ == '__main__':
+def setOption():
+    parser = OptionParser()
+    parser.add_option(
+        "-a", "--num_proc", dest="num_process", type="str", help="number process of training", default="1")
+    (options, args) = parser.parse_args(sys.argv)
+
+    global worker_list    
+    worker_list = "localhost:" + options.num_process
+
+if __name__ == '__main__':    
+    setOption()
     main()
