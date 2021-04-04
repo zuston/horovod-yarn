@@ -81,7 +81,7 @@ def main():
         (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
                 tf.cast(mnist_labels, tf.int64))
     )
-    dataset = dataset.repeat().shuffle(10000).batch(128)
+    dataset = dataset.repeat().shuffle(100).batch(32)
 
     mnist_model = tf.keras.Sequential([
         tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
@@ -127,18 +127,26 @@ def main():
         return loss_value
 
 
+    print('hvd size: %d, rank: %d' %(hvd.size(), hvd.rank()))
+    print('Doing training...')
+
+    k = 0
     # Horovod: adjust number of steps based on number of GPUs.
-    for batch, (images, labels) in enumerate(dataset.take(10000 // hvd.size())):
+    for batch, (images, labels) in enumerate(dataset.take(100 // hvd.size())):
         loss_value = training_step(images, labels, batch == 0)
 
+        print('iteration index: %d' % (k))
+        k = k + 1
         if batch % 10 == 0 and hvd.local_rank() == 0:
             print('Step #%d\tLoss: %.6f' % (batch, loss_value))
 
     # Horovod: save checkpoints only on worker 0 to prevent other workers from
     # corrupting it.
     if hvd.rank() == 0:
+        print('Doing checkpoint')
         checkpoint.save(checkpoint_dir)
-
+    
+    print('Done training.')
 
 if __name__ == '__main__':
     # Set Horovod runtime.
