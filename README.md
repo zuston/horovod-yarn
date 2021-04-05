@@ -6,7 +6,7 @@
 
 __Driver__
 ```
-python3 driver.py --num_proc=2
+python3 driver.py -w localhost:2
 ```
 
 __Task__
