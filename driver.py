@@ -1,3 +1,7 @@
+#
+# Copyright 2021 LinkedIn Corporation. All rights reserved. Licensed under the
+# BSD-2 Clause license. See LICENSE in the project root for license information.
+#
 import os
 import logging
 import time
@@ -12,31 +16,49 @@ try:
     from horovod.runner import gloo_run
     from horovod.runner.http.http_server import RendezvousServer
     from horovod.runner.common.util.hosts import get_host_assignments, parse_hosts
+    from horovod.runner.elastic import discovery
+    from horovod.runner.elastic.rendezvous import create_rendezvous_handler
+    from horovod.runner.elastic.driver import ElasticDriver
 except (ModuleNotFoundError, ImportError) as e:
     logging.warn("Horovod is not installed. See README for instructions to install it")
-    raise e
 
-PORT_FILE_NAME_SUFFIX = "____HOROVOD_REDENVOUS_SERVER____"
+PORT_FILE_NAME_SUFFIX = "____HOROVOD_RENDEZVOUS_SERVER____"
 
-def _driver_fn():
+FAKE_PORT_IN_TEST_MODE = 9999
+
+def elastic_driver_fn():
+    global_rendezv = RendezvousServer(verbose=1)
+    discover_hosts = discovery.HostDiscoveryScript("/Users/zuston/iqiyiDev/horovod-opal/dis.sh", 3)
+    driver = ElasticDriver(global_rendezv, discover_hosts, min_np=2, max_np=4)
+    handler = create_rendezvous_handler(driver)
+    global_rendezv_port = global_rendezv.start(handler)
+    print('port: ' + str(global_rendezv_port))
+    print('wait for available slots: {}'.format(2))
+    current_hosts = driver.wait_for_available_slots(2)
+    print("current hosts:" + str(current_hosts))
+    pending_slots = driver._update_host_assignments(current_hosts)
+    print("pending hosts:" + str(pending_slots))
+    driver._worker_registry.reset(driver.world_size())
+
+
+def static_driver_fn():
     global_rendezv = RendezvousServer(verbose=1)
     global_rendezv_port = global_rendezv.start()
-    print("redezevous server started. port: " + str(global_rendezv_port))
+    print("Rendezvous server started, port: " + str(global_rendezv_port))
 
-    # 准备好相关 host 的地址，然后构建
     # worker_list = "localhost:1"
     hosts = parse_hosts(worker_list)
     host_alloc_plan = get_host_assignments(hosts, 1)
-    print(host_alloc_plan)
 
     global_rendezv.init(host_alloc_plan)
     return (global_rendezv_port, host_alloc_plan)
+
 
 def _get_host_plan_json(host_alloc_plan):
     hosts = []
     for plan in host_alloc_plan:
         hosts.append({
-            "hostname": plan.hostname, 
+            "hostname": plan.hostname,
             "rank": plan.rank,
             "local_rank": plan.local_rank,
             "cross_rank": plan.cross_rank,
@@ -44,20 +66,33 @@ def _get_host_plan_json(host_alloc_plan):
             "local_size": plan.local_size,
             "cross_size": plan.cross_size
             })
-    print(json.dumps(hosts))
+    print("Host alloc plan: \n" + json.dumps(hosts))
     return json.dumps(hosts)
 
-def _setOption():
+
+def set_option():
     parser = OptionParser()
     parser.add_option(
         "-a", "--num_proc", dest="num_process", type="str", help="number process of training", default="1")
     parser.add_option(
         "-w", "--worker_list", dest="worker_list", type="str", help="worker list"
     )
+    parser.add_option(
+        "-e", action="store_true", help="enable elastic training.", dest="enable_elastic", default=False
+    )
+    parser.add_option(
+        "-t", action="store_false", help="is in test mode", dest="is_in_test_mode", default=False
+    )
     (options, args) = parser.parse_args(sys.argv)
 
     global worker_list
     worker_list = options.worker_list
+    global enable_elastic
+    enable_elastic = options.enable_elastic
+    print("Enable elastic: " + str(enable_elastic))
+    global is_in_test_mode
+    is_in_test_mode = options.is_in_test_mode
+
 
 def __port_file_path(port):
     path_dir = os.path.dirname(os.path.abspath(__file__))
@@ -86,29 +121,32 @@ def delete_port_file(port):
 
 def handle_exit(*args):
     try:
-        logging.info("Closing redenvous server...")
-        # todo: Close redenvous server.
-        logging.info("Closed redenvous server")
+        logging.info("Closing rendezvous server...")
+        # todo: Close rendezvous server.
+        logging.info("Closed rendezvous server")
 
         delete_port_file(port)
     except:
-        logging.exception("Failed to close redenvous server")
-        
+        logging.exception("Failed to close rendezvous server")
+
     sys.exit(0)
 
 
-if __name__ == '__main__':  
-    try:  
-        _setOption()
+if __name__ == '__main__':
+    try:
+        set_option()
         global port
-        (port, host_alloc_plan) = _driver_fn()
-        create_port_file(port, host_alloc_plan)
-        signal.signal(signal.SIGTERM, handle_exit)
-        signal.signal(signal.SIGINT, handle_exit)
-        signal.signal(signal.SIGILL, handle_exit)
+        if enable_elastic:
+            elastic_driver_fn()
+        else:
+            (port, host_alloc_plan) = static_driver_fn()
+            create_port_file(port, host_alloc_plan)
     except:
-        logging.exception("errors on staring horovod redenvous server")
+        logging.exception("Errors on starting horovod rendezvous server.")
         handle_exit()
 
-    time.sleep(2000)
-    handle_exit()
+    signal.signal(signal.SIGTERM, handle_exit)
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGILL, handle_exit)
+    while True:
+        time.sleep(10)

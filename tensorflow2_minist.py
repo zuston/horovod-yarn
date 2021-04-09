@@ -45,6 +45,9 @@ def setHorovodRuntimeEnv():
     parser.add_option(
         "-e", "--timeout", dest="timeout", type="str", default="2000"
     )
+    parser.add_option(
+        "-t", action="store_true", help="enable elastic training.", dest="enable_elastic", default=False
+    )
 
     (options, args) = parser.parse_args(sys.argv)
     
@@ -62,6 +65,9 @@ def setHorovodRuntimeEnv():
     os.environ['HOROVOD_CROSS_SIZE'] = options.cross_size
 
     os.environ['HOROVOD_GLOO_TIMEOUT_SECONDS'] = options.timeout
+
+    if options.enable_elastic:
+        os.environ['HOROVOD_ELASTIC'] = 1
 
 def main():
     # Horovod: initialize Horovod.
@@ -81,7 +87,7 @@ def main():
         (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
                 tf.cast(mnist_labels, tf.int64))
     )
-    dataset = dataset.repeat().shuffle(100).batch(32)
+    dataset = dataset.repeat().shuffle(10000).batch(128)
 
     mnist_model = tf.keras.Sequential([
         tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
@@ -132,7 +138,7 @@ def main():
 
     k = 0
     # Horovod: adjust number of steps based on number of GPUs.
-    for batch, (images, labels) in enumerate(dataset.take(100 // hvd.size())):
+    for batch, (images, labels) in enumerate(dataset.take(1000 // hvd.size())):
         loss_value = training_step(images, labels, batch == 0)
 
         print('iteration index: %d' % (k))
