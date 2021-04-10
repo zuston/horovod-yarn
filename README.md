@@ -1,9 +1,9 @@
-Linked PR: https://github.com/linkedin/TonY/pull/524
+Linked TonY(TF/PyTorch on Yarn) PR: https://github.com/linkedin/TonY/pull/524
 ## Horovod on Yarn
-旨在提供一个 horovod on Yarn 的本地测试方案，可以在本地进行多进程的测试。
+Aim to provide a Horovod local test program on Yarn, which can perform multi-process tests locally.
 
-1. driver 启动一个 rendevous server 
-2. 各个 worker 通过注入一些 horovod 运行时变量，即可启动
+1. Driver start rendezvous server 
+2. Inject some Horovod envs before starting training worker
 
 __Driver__
 ```
